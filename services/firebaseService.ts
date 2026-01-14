@@ -11,19 +11,18 @@ import {
   orderBy,
   updateDoc, 
   addDoc, 
-  onSnapshot,
-  writeBatch
+  onSnapshot
 } from "firebase/firestore";
 import { Client, Transaction } from "../types.js";
 
+// Configurações atualizadas do novo banco de dados cashflow-cred-5afb2
 const firebaseConfig = {
-  apiKey: "AIzaSyB7glaW9yCMHt6oResv0_mL87bWe4s9wVQ",
-  authDomain: "cashflow-cred.firebaseapp.com",
-  projectId: "cashflow-cred",
-  storageBucket: "cashflow-cred.firebasestorage.app",
-  messagingSenderId: "875952674480",
-  appId: "1:875952674480:web:d327374330f8c69b158d75",
-  measurementId: "G-F06844992C"
+  apiKey: "AIzaSyALTpd7IOCrvD5FNHhd3ZJ-PnjdXcfXUYo",
+  authDomain: "cashflow-cred-5afb2.firebaseapp.com",
+  projectId: "cashflow-cred-5afb2",
+  storageBucket: "cashflow-cred-5afb2.firebasestorage.app",
+  messagingSenderId: "352296609239",
+  appId: "1:352296609239:web:ed619e29f7f735d1791792"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -60,7 +59,6 @@ export const listenToClientData = (clientId: string, callback: (client: Client) 
 };
 
 export const listenToTransactions = (clientId: string, callback: (transactions: Transaction[]) => void) => {
-  // Ordenando diretamente na query para performance superior
   const q = query(
     collection(db, "transactions"), 
     where("clientId", "==", clientId),
