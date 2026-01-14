@@ -263,7 +263,7 @@ const App: React.FC = () => {
             <form onSubmit={handleSignup} className="space-y-4 animate-in slide-in-from-left-4 duration-300">
               <input name="name" required placeholder="Nome Completo" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
               <input name="email" required type="email" placeholder="E-mail principal" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
-              <input name="phone" required placeholder="Telefone / WhatsApp" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
+              <input name="phone" required placeholder="Telefone" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
               <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg shadow-emerald-900/10 hover:brightness-110 active:scale-[0.98] transition-all">Cadastrar</button>
             </form>
           )}
