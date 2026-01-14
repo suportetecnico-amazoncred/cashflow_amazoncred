@@ -1,0 +1,118 @@
+
+import React from 'react';
+import { Client, Transaction, MovementType } from '../types.js';
+
+interface ClientManagerProps {
+  clients: Client[];
+  transactions: Transaction[];
+}
+
+const ClientManager: React.FC<ClientManagerProps> = ({ clients, transactions }) => {
+  const activeClient = clients[0];
+  
+  if (!activeClient) return <div className="p-10 text-center text-slate-400">Carregando perfil...</div>;
+
+  const formatCurrency = (value: number) => {
+    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  const translateType = (type: MovementType | string) => {
+    const types: Record<string, string> = {
+      'entry': 'DEPÓSITO',
+      'withdrawal': 'SAQUE',
+      'credit_use': 'EMPRÉSTIMO',
+      'payment': 'PAGAMENTO'
+    };
+    return types[type] || type.toUpperCase();
+  };
+
+  // As transações já vêm ordenadas do Service, removendo o .sort() redundante
+  const clientTransactions = transactions.filter(t => t.clientId === activeClient.id);
+
+  return (
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+      <header>
+        <h2 className="text-2xl md:text-3xl font-bold text-slate-900">Extrato & Perfil</h2>
+        <p className="text-slate-500 text-sm">Seu histórico completo de movimentações.</p>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
+        <div className="bg-white p-6 md:p-8 rounded-2xl md:rounded-3xl border border-slate-100 shadow-sm space-y-6 h-fit order-2 lg:order-1">
+          <div className="flex flex-row lg:flex-col items-center lg:text-center space-x-4 lg:space-x-0 lg:space-y-4">
+            <div className="w-16 h-16 lg:w-24 lg:h-24 rounded-2xl lg:rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl lg:text-4xl font-black">
+              {activeClient.name.charAt(0)}
+            </div>
+            <div className="overflow-hidden">
+              <h3 className="text-xl lg:text-2xl font-black text-slate-900 truncate">{activeClient.name}</h3>
+              <p className="text-slate-400 font-medium text-xs lg:text-sm truncate">{activeClient.email}</p>
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-4 border-t border-slate-50">
+             <div className="flex justify-between items-center text-xs md:text-sm">
+               <span className="font-bold text-slate-400 uppercase tracking-tighter">Telefone</span>
+               <span className="font-bold text-slate-700">{activeClient.phone}</span>
+             </div>
+             <div className="flex justify-between items-center text-xs md:text-sm">
+               <span className="font-bold text-slate-400 uppercase tracking-tighter">Total Contratado</span>
+               <span className="font-bold text-slate-700">{formatCurrency(activeClient.loanTotal)}</span>
+             </div>
+             <div className="flex justify-between items-center text-xs md:text-sm">
+               <span className="font-bold text-slate-400 uppercase tracking-tighter">Parcela</span>
+               <span className="font-bold text-emerald-600">{formatCurrency(activeClient.installmentValue)}</span>
+             </div>
+          </div>
+          
+          <div className="p-4 bg-slate-50 rounded-2xl text-[10px] text-slate-500 font-bold text-center uppercase tracking-widest">
+            ID: {activeClient.id.split('-')[0]}
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 space-y-4 md:space-y-6 order-1 lg:order-2">
+           <div className="flex justify-between items-center">
+             <h3 className="text-lg md:text-xl font-black text-slate-800">Minhas Transações</h3>
+             <span className="text-[10px] md:text-xs font-bold bg-slate-100 px-3 py-1 rounded-full text-slate-500">
+               {clientTransactions.length} Itens
+             </span>
+           </div>
+
+           <div className="space-y-2 md:space-y-3">
+             {clientTransactions.length === 0 ? (
+               <div className="p-12 text-center bg-white rounded-3xl border-2 border-dashed border-slate-100 text-slate-300 font-bold uppercase text-xs">
+                 Nenhuma movimentação ainda
+               </div>
+             ) : (
+               clientTransactions.map(t => (
+                 <div key={t.id} className="bg-white p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-100 hover:border-emerald-200 transition-all flex items-center justify-between">
+                    <div className="flex items-center gap-3 md:gap-5">
+                      <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center text-lg md:text-2xl flex-shrink-0 ${
+                        t.type === 'entry' || t.type === 'payment' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+                      }`}>
+                        {t.type === 'entry' ? '💰' : t.type === 'withdrawal' ? '💸' : t.type === 'credit_use' ? '🏦' : '✅'}
+                      </div>
+                      <div className="overflow-hidden">
+                        <p className="font-bold text-slate-800 text-sm md:text-base truncate">{t.description || 'Operação'}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          {new Date(t.timestamp).toLocaleDateString('pt-BR')} • {new Date(t.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className={`text-base md:text-xl font-black ${
+                        t.type === 'entry' || t.type === 'payment' ? 'text-emerald-600' : 'text-red-600'
+                      }`}>
+                        {t.type === 'entry' || t.type === 'payment' ? '+' : '-'} {formatCurrency(t.amount)}
+                      </p>
+                      <p className="text-[8px] md:text-[10px] text-slate-300 font-black uppercase tracking-widest">{translateType(t.type)}</p>
+                    </div>
+                 </div>
+               ))
+             )}
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ClientManager;
