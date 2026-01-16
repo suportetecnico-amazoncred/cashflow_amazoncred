@@ -1,0 +1,75 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+    // =================================
+    // CLIENTS COLLECTION
+    // =================================
+    match /clients/{userId} {
+      // Um usuário só pode ler, atualizar ou deletar seu próprio documento de cliente.
+      allow read, update, delete: if request.auth.uid == userId;
+      
+      // Um usuário pode criar seu próprio documento, mas apenas se os valores iniciais forem seguros (sem saldo inicial, etc.).
+      allow create: if request.auth.uid == userId
+                      && request.resource.data.balance == 0
+                      && request.resource.data.savings == 0
+                      && request.resource.data.creditUsed == 0
+                      && request.resource.data.loanTotal == 0;
+    }
+    
+    // =================================
+    // TRANSACTIONS COLLECTION
+    // =================================
+    match /transactions/{transactionId} {
+      // Um usuário só pode ler as suas próprias transações.
+      allow read: if request.auth.uid != null && get(/databases/$(database)/documents/clients/$(request.auth.uid)).data.id == resource.data.clientId;
+      
+      // Um usuário só pode criar uma transação para si mesmo e ela deve ser válida.
+      // A atualização e deleção são proibidas para manter um histórico imutável.
+      allow create: if request.auth.uid != null 
+                    && request.auth.uid == request.resource.data.clientId
+                    && isTransactionValid(request.resource.data);
+
+      allow update, delete: if false; 
+    }
+    
+    // =================================
+    // HELPER FUNCTIONS
+    // =================================
+    function isTransactionValid(data) {
+      let clientData = get(/databases/$(database)/documents/clients/$(request.auth.uid)).data;
+      
+      // Validações Gerais
+      let isCommonValid = data.amount > 0 
+                          && data.clientId == request.auth.uid 
+                          && data.timestamp == request.time;
+      
+      if (!isCommonValid) { return false; }
+
+      // Validações Específicas por Tipo de Transação
+      if (data.type == 'entry') {
+        return true; // Depósitos são sempre bem-vindos.
+      }
+      
+      if (data.type == 'withdrawal' || data.type == 'savings_transfer') {
+        return clientData.balance >= data.amount; // Checa se há saldo para saque ou transferência.
+      }
+
+      if (data.type == 'payment') {
+        // Checa se há saldo e se o pagamento não é maior que a dívida.
+        return clientData.balance >= data.amount && clientData.creditUsed >= data.amount;
+      }
+      
+      if (data.type == 'credit_use') {
+        // Checa se já não há um empréstimo ativo.
+        return clientData.creditUsed == 0 
+                && data.installments > 0
+                && data.amount == (clientData.loanTotal / clientData.totalInstallments) * data.installments; // Verificação simples
+      }
+      
+      return false; // Bloqueia qualquer outro tipo não listado.
+    }
+  }
+}
