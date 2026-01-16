@@ -1,14 +1,10 @@
 
-import React from 'react';
-import { Client, Transaction, MovementType } from '../types.js';
+import React, { useContext } from 'react';
+import { MovementType } from '../types.js';
+import { ClientContext } from '../context/ClientContext.js';
 
-interface ClientManagerProps {
-  clients: Client[];
-  transactions: Transaction[];
-}
-
-const ClientManager: React.FC<ClientManagerProps> = ({ clients, transactions }) => {
-  const activeClient = clients[0];
+const ClientManager: React.FC = () => {
+  const { activeClient, transactions } = useContext(ClientContext);
   
   if (!activeClient) return <div className="p-10 text-center text-slate-400">Carregando perfil...</div>;
 
@@ -21,13 +17,11 @@ const ClientManager: React.FC<ClientManagerProps> = ({ clients, transactions }) 
       'entry': 'DEPÓSITO',
       'withdrawal': 'SAQUE',
       'credit_use': 'EMPRÉSTIMO',
-      'payment': 'PAGAMENTO'
+      'payment': 'PAGAMENTO',
+      'savings_transfer': 'POUPANÇA'
     };
     return types[type] || type.toUpperCase();
   };
-
-  // As transações já vêm ordenadas do Service, removendo o .sort() redundante
-  const clientTransactions = transactions.filter(t => t.clientId === activeClient.id);
 
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
@@ -64,7 +58,7 @@ const ClientManager: React.FC<ClientManagerProps> = ({ clients, transactions }) 
           </div>
           
           <div className="p-4 bg-slate-50 rounded-2xl text-[10px] text-slate-500 font-bold text-center uppercase tracking-widest">
-            ID: {activeClient.id.split('-')[0]}
+            ID: {activeClient.id.substring(0, 8)}...
           </div>
         </div>
 
@@ -72,23 +66,24 @@ const ClientManager: React.FC<ClientManagerProps> = ({ clients, transactions }) 
            <div className="flex justify-between items-center">
              <h3 className="text-lg md:text-xl font-black text-slate-800">Minhas Transações</h3>
              <span className="text-[10px] md:text-xs font-bold bg-slate-100 px-3 py-1 rounded-full text-slate-500">
-               {clientTransactions.length} Itens
+               {transactions.length} Itens
              </span>
            </div>
 
            <div className="space-y-2 md:space-y-3">
-             {clientTransactions.length === 0 ? (
+             {transactions.length === 0 ? (
                <div className="p-12 text-center bg-white rounded-3xl border-2 border-dashed border-slate-100 text-slate-300 font-bold uppercase text-xs">
                  Nenhuma movimentação ainda
                </div>
              ) : (
-               clientTransactions.map(t => (
+               transactions.map(t => (
                  <div key={t.id} className="bg-white p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-100 hover:border-emerald-200 transition-all flex items-center justify-between">
                     <div className="flex items-center gap-3 md:gap-5">
                       <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center text-lg md:text-2xl flex-shrink-0 ${
-                        t.type === 'entry' || t.type === 'payment' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+                        t.type === 'entry' || t.type === 'payment' ? 'bg-emerald-50 text-emerald-600' : 
+                        t.type === 'savings_transfer' ? 'bg-indigo-50 text-indigo-600' : 'bg-red-50 text-red-600'
                       }`}>
-                        {t.type === 'entry' ? '💰' : t.type === 'withdrawal' ? '💸' : t.type === 'credit_use' ? '🏦' : '✅'}
+                        {t.type === 'entry' ? '💰' : t.type === 'withdrawal' ? '💸' : t.type === 'credit_use' ? '🏦' : t.type === 'savings_transfer' ? '🐷' : '✅'}
                       </div>
                       <div className="overflow-hidden">
                         <p className="font-bold text-slate-800 text-sm md:text-base truncate">{t.description || 'Operação'}</p>
@@ -116,3 +111,4 @@ const ClientManager: React.FC<ClientManagerProps> = ({ clients, transactions }) 
 };
 
 export default ClientManager;
+    

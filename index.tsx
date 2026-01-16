@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ClientProvider } from './context/ClientContext.js';
 
 const startApp = () => {
   const rootElement = document.getElementById('root');
@@ -9,7 +10,9 @@ const startApp = () => {
     const root = ReactDOM.createRoot(rootElement);
     root.render(
       <React.StrictMode>
-        <App />
+        <ClientProvider>
+          <App />
+        </ClientProvider>
       </React.StrictMode>
     );
   }
@@ -20,3 +23,4 @@ if (document.readyState === 'loading') {
 } else {
   startApp();
 }
+    

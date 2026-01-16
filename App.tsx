@@ -1,20 +1,22 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { User } from 'firebase/auth';
 import Sidebar from './components/Sidebar.js';
 import Dashboard from './components/Dashboard.js';
 import Register from './components/Register.js';
 import LoanManager from './components/LoanManager.js';
 import ClientManager from './components/ClientManager.js';
 import SavingsManager from './components/SavingsManager.js';
-import { ViewState, Transaction, Client, MovementType } from './types.js';
+import { ViewState, MovementType } from './types.js';
 import { 
-  getClientByEmail, 
-  saveClient, 
-  saveTransaction, 
-  updateClientBalances, 
-  listenToClientData, 
-  listenToTransactions 
+  onAuthChange,
+  signUpWithEmail,
+  signInWithEmail,
+  logoutFirebase,
+  saveClient,
+  processTransaction
 } from './services/firebaseService.js';
+import { ClientContext } from './context/ClientContext.js';
 
 const LOGO_URL = "img/sitelogo.png";
 
@@ -40,78 +42,62 @@ const LogoContainer: React.FC<{ size?: string }> = ({ size = "w-24 h-24" }) => (
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('welcome');
-  const [welcomeMode, setWelcomeMode] = useState<'signup' | 'login'>('signup');
-  const [activeClientId, setActiveClientId] = useState<string | null>(() => localStorage.getItem('zen_active_id'));
-  const [loginEmail, setLoginEmail] = useState('');
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [welcomeMode, setWelcomeMode] = useState<'signup' | 'login'>('login');
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [activeClient, setActiveClient] = useState<Client | null>(null);
+  const { activeClient } = useContext(ClientContext);
 
   useEffect(() => {
-    if (!activeClientId) return;
-    localStorage.setItem('zen_active_id', activeClientId);
-    
-    const unsubClient = listenToClientData(activeClientId, (client) => {
-      setActiveClient(client);
-      if (view === 'welcome') setView('dashboard');
+    const unsubscribe = onAuthChange(user => {
+      setAuthUser(user);
+      setIsLoading(false);
+      if (user) {
+        setView('dashboard');
+      } else {
+        setView('welcome');
+      }
     });
-
-    const unsubTxs = listenToTransactions(activeClientId, (txs) => {
-      setTransactions(txs);
-    });
-
-    return () => {
-      unsubClient();
-      unsubTxs();
-    };
-  }, [activeClientId, view]);
+    return () => unsubscribe();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setIsAuthenticating(true);
+    setIsProcessing(true);
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
     try {
-      const client = await getClientByEmail(loginEmail.trim());
-      if (client) {
-        setActiveClientId(client.id);
-        setView('dashboard');
-      } else {
-        alert("E-mail não encontrado no sistema Amazoncred.");
-      }
+      await signInWithEmail(email, password);
     } catch (err) {
       console.error(err);
-      alert("Erro ao conectar ao servidor.");
+      alert("Erro ao entrar. Verifique seu e-mail e senha.");
     } finally {
-      setIsAuthenticating(false);
+      setIsProcessing(false);
     }
   };
 
   const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-    setIsAuthenticating(true);
+    setIsProcessing(true);
+    const formData = new FormData(e.currentTarget);
+    const email = (formData.get('email') as string).toLowerCase();
+    const password = formData.get('password') as string;
 
     try {
-      const email = (formData.get('email') as string).toLowerCase();
-      const existing = await getClientByEmail(email);
-      
-      if (existing) {
-        alert("Este e-mail já possui um cadastro.");
-        setIsAuthenticating(false);
-        setWelcomeMode('login');
-        return;
-      }
+      const userCredential = await signUpWithEmail(email, password);
+      const user = userCredential.user;
 
-      const nc: Client = { 
+      const nc = { 
         name: formData.get('name') as string, 
         email: email, 
         phone: formData.get('phone') as string, 
         installmentValue: 0,
         totalInstallments: 0,
         loanTotal: 0,
-        id: crypto.randomUUID(), 
+        id: user.uid,
         creditUsed: 0, 
         balance: 0, 
         savings: 0, 
@@ -119,102 +105,62 @@ const App: React.FC = () => {
       };
       
       await saveClient(nc);
-      setActiveClientId(nc.id);
-      setView('dashboard');
     } catch (err) {
       console.error(err);
-      alert("Erro ao salvar cadastro.");
+      if ((err as any).code === 'auth/email-already-in-use') {
+        alert("Este e-mail já possui um cadastro. Tente fazer o login.");
+        setWelcomeMode('login');
+      } else {
+        alert("Erro ao criar cadastro. A senha precisa ter no mínimo 6 caracteres.");
+      }
     } finally {
-      setIsAuthenticating(false);
+      setIsProcessing(false);
     }
   };
 
-  const handleTransaction = async (clientId: string, type: MovementType, amount: number, description: string, installments?: number) => {
-    if (!activeClient) return;
-
-    const transactionData: Transaction = {
-      id: crypto.randomUUID(),
-      clientId,
-      type,
-      amount,
-      description: description || 'Operação',
-      timestamp: Date.now(),
-      profit: amount * 0.10,
-      paymentMethod: type === 'payment' ? 'Pagamento Parcela' : 'Operação',
-      ...(installments && { installments })
-    };
-
+  const handleSecureTransaction = async (type: MovementType, amount: number, description: string, installments?: number) => {
+    setIsProcessing(true);
     try {
-      let { balance, creditUsed, loanTotal, installmentValue, totalInstallments } = activeClient;
-      
-      if (type === 'entry') balance += amount;
-      else if (type === 'withdrawal') balance -= amount;
-      else if (type === 'credit_use') {
-          creditUsed += amount;
-          loanTotal += amount;
-          if (installments) {
-            installmentValue = amount / installments;
-            totalInstallments = installments;
-          }
+      const result = await processTransaction({ type, amount, description, installments });
+      if (result.data.success) {
+        setView('dashboard');
+      } else {
+        throw new Error(result.data.error || "Erro desconhecido na transação.");
       }
-      else if (type === 'payment') {
-        balance -= amount;
-        creditUsed = Math.max(0, creditUsed - amount);
-      }
-      
-      await saveTransaction(transactionData);
-      await updateClientBalances(clientId, { 
-        balance, 
-        creditUsed, 
-        loanTotal, 
-        installmentValue, 
-        totalInstallments 
-      });
-      setView('dashboard');
     } catch (err) {
       console.error("Erro na transação:", err);
-      alert("Erro ao processar transação.");
+      alert(`Erro ao processar: ${(err as Error).message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const logout = () => {
     setIsLoggingOut(true);
-    setTimeout(() => {
-      setActiveClientId(null);
-      setActiveClient(null);
-      setTransactions([]);
-      localStorage.removeItem('zen_active_id');
-      setView('welcome');
-      setWelcomeMode('login');
+    setTimeout(async () => {
+      await logoutFirebase();
       setIsLoggingOut(false);
     }, 1500);
   };
-
+  
   const renderContent = () => {
-    if (!activeClient) return null;
     switch (view) {
-      case 'dashboard': return <Dashboard transactions={transactions} clients={[activeClient]} savings={{ totalSavings: activeClient.savings, savingsHistory: [] }} />;
-      case 'operations': return <Register onCompleteTransaction={handleTransaction} clients={[activeClient]} />;
-      case 'loans': return <LoanManager activeClient={activeClient} onConfirm={handleTransaction} />;
-      case 'clients': return <ClientManager clients={[activeClient]} transactions={transactions} />;
-      case 'savings': return <SavingsManager clients={[activeClient]} onTransfer={async (cid, amt, desc) => {
-        const newBal = activeClient.balance - amt;
-        const newSav = activeClient.savings + amt;
-        await updateClientBalances(cid, { balance: newBal, savings: newSav });
-        await saveTransaction({ 
-          id: crypto.randomUUID(), 
-          clientId: cid, 
-          type: 'withdrawal', 
-          amount: amt, 
-          description: `Poupança: ${desc}`, 
-          timestamp: Date.now(), 
-          profit: 0, 
-          paymentMethod: 'Interno' 
-        });
-      }} />;
-      default: return <Dashboard transactions={transactions} clients={[activeClient]} savings={{ totalSavings: activeClient.savings, savingsHistory: [] }} />;
+      case 'dashboard': return <Dashboard />;
+      case 'operations': return <Register onCompleteTransaction={handleSecureTransaction} />;
+      case 'loans': return <LoanManager onConfirm={handleSecureTransaction} />;
+      case 'clients': return <ClientManager />;
+      case 'savings': return <SavingsManager onTransfer={handleSecureTransaction} />;
+      default: return <Dashboard />;
     }
   };
+
+  if (isLoading) {
+      return (
+          <div className="fixed inset-0 bg-[#0f172a] flex flex-col items-center justify-center">
+            <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+          </div>
+      );
+  }
 
   if (isLoggingOut) {
     return (
@@ -228,41 +174,40 @@ const App: React.FC = () => {
     );
   }
 
-  if (view === 'welcome' || !activeClient) {
+  if (!authUser) {
     return (
       <div className="min-h-screen w-full bg-[#0f172a] flex items-center justify-center p-4">
-        {isAuthenticating && (
+        {isProcessing && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex flex-col items-center justify-center text-white transition-all">
             <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4"></div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Autenticando...</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Processando...</p>
           </div>
         )}
         
         <div className="max-w-md w-full bg-white rounded-[2.5rem] p-10 shadow-2xl animate-in fade-in zoom-in-95 duration-700">
           <div className="text-center mb-8 flex flex-col items-center">
             <LogoContainer />
-            
             <h1 className="text-4xl md:text-5xl font-black tracking-tighter text-[#0f172a] leading-none mt-6">
               Cash Flow<br/>
               <span className="bg-gradient-to-r from-[#00a36c] to-[#008ba3] bg-clip-text text-transparent">Amazoncred</span>
             </h1>
             <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.4em] mt-4">Gestão de Empréstimo</p>
           </div>
-
           <div className="flex gap-2 mb-8 bg-slate-100 p-1.5 rounded-2xl">
              <button onClick={() => setWelcomeMode('signup')} className={`flex-1 py-3 text-[11px] font-black uppercase rounded-xl transition-all ${welcomeMode === 'signup' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Cadastro</button>
              <button onClick={() => setWelcomeMode('login')} className={`flex-1 py-3 text-[11px] font-black uppercase rounded-xl transition-all ${welcomeMode === 'login' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Já sou Cliente</button>
           </div>
-
           {welcomeMode === 'login' ? (
             <form onSubmit={handleLogin} className="space-y-4 animate-in slide-in-from-right-4 duration-300">
-              <input required type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder="Seu e-mail cadastrado" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
+              <input name="email" required type="email" placeholder="Seu e-mail" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
+              <input name="password" required type="password" placeholder="Sua senha" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
               <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg shadow-emerald-900/10 hover:brightness-110 active:scale-[0.98] transition-all">Entrar</button>
             </form>
           ) : (
             <form onSubmit={handleSignup} className="space-y-4 animate-in slide-in-from-left-4 duration-300">
               <input name="name" required placeholder="Nome Completo" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
               <input name="email" required type="email" placeholder="E-mail principal" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
+              <input name="password" required type="password" placeholder="Crie uma senha (mín. 6 letras)" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
               <input name="phone" required placeholder="Telefone" className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-700 transition-all" />
               <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg shadow-emerald-900/10 hover:brightness-110 active:scale-[0.98] transition-all">Cadastrar</button>
             </form>
@@ -274,20 +219,30 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row">
+      {isProcessing && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex flex-col items-center justify-center text-white transition-all">
+          <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4"></div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Processando...</p>
+        </div>
+      )}
       <Sidebar 
         currentView={view} 
         setView={setView} 
         onLogout={logout} 
         activeClientName={activeClient?.name}
       />
-      
       <main className="flex-1 p-4 md:p-8 lg:p-12 pb-24 lg:pb-12 lg:ml-64 overflow-x-hidden">
-        <div key={view} className="view-transition">
-          {renderContent()}
-        </div>
+        {activeClient ? (
+          <div key={view} className="view-transition">
+            {renderContent()}
+          </div>
+        ) : (
+          <div className="text-center p-10 text-slate-400 font-bold uppercase">Carregando dados...</div>
+        )}
       </main>
     </div>
   );
 };
 
 export default App;
+    

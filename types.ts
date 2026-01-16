@@ -13,7 +13,7 @@ export interface Client {
   createdAt: number;
 }
 
-export type MovementType = 'entry' | 'withdrawal' | 'credit_use' | 'payment';
+export type MovementType = 'entry' | 'withdrawal' | 'credit_use' | 'payment' | 'savings_transfer';
 
 export interface Transaction {
   id: string;
@@ -33,3 +33,4 @@ export interface SavingsState {
 }
 
 export type ViewState = 'welcome' | 'dashboard' | 'operations' | 'clients' | 'savings' | 'loans';
+    

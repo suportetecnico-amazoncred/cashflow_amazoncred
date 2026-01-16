@@ -1,16 +1,11 @@
 
-import React, { useMemo } from 'react';
-import { Transaction, Client, SavingsState } from '../types.js';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useMemo, useContext } from 'react';
+import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { ClientContext } from '../context/ClientContext.js';
 
-interface DashboardProps {
-  transactions: Transaction[];
-  clients: Client[];
-  savings: SavingsState;
-}
+const Dashboard: React.FC = () => {
+  const { activeClient, transactions } = useContext(ClientContext);
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, clients }) => {
-  const activeClient = clients[0];
   if (!activeClient) return null;
 
   const formatCurrency = (value: number) => {
@@ -22,10 +17,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, clients }) => {
     remaining: activeClient.creditUsed,
     count: activeClient.totalInstallments,
     instValue: activeClient.installmentValue
-  }), [activeClient.loanTotal, activeClient.creditUsed, activeClient.totalInstallments, activeClient.installmentValue]);
+  }), [activeClient]);
 
   const installmentsData = useMemo(() => {
-    const paid = loanStats.count > 0 ? Math.round((loanStats.total - loanStats.remaining) / loanStats.instValue) : 0;
+    if (loanStats.count === 0 || loanStats.instValue === 0) {
+      return { paid: 0, remaining: 0, percentage: 0 };
+    }
+    const paid = Math.round((loanStats.total - loanStats.remaining) / loanStats.instValue);
     return {
       paid,
       remaining: Math.max(0, loanStats.count - paid),
@@ -80,7 +78,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, clients }) => {
                   <p className="text-lg md:text-xl font-black text-slate-800">{formatCurrency(loanStats.total)}</p>
                 </div>
              </div>
-
              <div className="space-y-4 relative z-10">
                 <div className="flex justify-between text-[10px] md:text-sm font-bold">
                   <span className="text-emerald-600 uppercase">Pagas: {installmentsData.paid}</span>
@@ -100,7 +97,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, clients }) => {
                 </div>
              </div>
           </div>
-
           <div className="bg-white p-6 md:p-8 rounded-2xl md:rounded-3xl shadow-sm border border-slate-100 min-h-[300px]">
             <h3 className="text-base md:text-lg font-bold mb-4 md:mb-6">Movimentações Recentes</h3>
             <div className="h-48 md:h-64 w-full">
@@ -121,7 +117,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, clients }) => {
             </div>
           </div>
         </div>
-
         <div className="space-y-4 md:space-y-6">
           <div className="bg-slate-900 p-6 md:p-8 rounded-2xl md:rounded-3xl text-white shadow-xl flex flex-col justify-between">
             <div>
@@ -140,7 +135,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, clients }) => {
               </div>
             </div>
           </div>
-
           <div className="bg-white p-6 md:p-8 rounded-2xl md:rounded-3xl border border-slate-200 shadow-sm">
              <p className="text-slate-400 text-[10px] font-black uppercase mb-3">Valor da Parcela</p>
              <h4 className="text-lg font-bold text-slate-800 mb-1">{formatCurrency(loanStats.instValue)}</h4>
@@ -156,3 +150,4 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, clients }) => {
 };
 
 export default Dashboard;
+    

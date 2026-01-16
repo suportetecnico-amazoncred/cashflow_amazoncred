@@ -1,14 +1,14 @@
 
-import React, { useState } from 'react';
-import { Client } from '../types.js';
+import React, { useState, useContext } from 'react';
+import { MovementType } from '../types.js';
+import { ClientContext } from '../context/ClientContext.js';
 
 interface SavingsProps {
-  clients: Client[];
-  onTransfer: (clientId: string, amount: number, description: string) => void;
+  onTransfer: (type: MovementType, amount: number, description: string) => void;
 }
 
-const SavingsManager: React.FC<SavingsProps> = ({ clients, onTransfer }) => {
-  const activeClient = clients[0];
+const SavingsManager: React.FC<SavingsProps> = ({ onTransfer }) => {
+  const { activeClient } = useContext(ClientContext);
   const [amount, setAmount] = useState<number>(0);
   const [description, setDescription] = useState('');
 
@@ -19,7 +19,11 @@ const SavingsManager: React.FC<SavingsProps> = ({ clients, onTransfer }) => {
   const handleTransfer = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeClient || amount <= 0) return;
-    onTransfer(activeClient.id, amount, description);
+    if (activeClient.balance < amount) {
+        alert('Saldo insuficiente para transferir para a poupança.');
+        return;
+    }
+    onTransfer('savings_transfer', amount, description || 'Depósito na Poupança');
     setAmount(0);
     setDescription('');
   };
@@ -43,8 +47,8 @@ const SavingsManager: React.FC<SavingsProps> = ({ clients, onTransfer }) => {
                 <p className="text-lg md:text-xl font-black text-emerald-800">{formatCurrency(activeClient.balance)}</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] font-black text-emerald-600 uppercase">Na Poupança</p>
-                <p className="text-lg md:text-xl font-black text-emerald-800">{formatCurrency(activeClient.savings)}</p>
+                <p className="text-[10px] font-black text-indigo-600 uppercase">Na Poupança</p>
+                <p className="text-lg md:text-xl font-black text-indigo-800">{formatCurrency(activeClient.savings)}</p>
               </div>
           </div>
 
@@ -105,3 +109,4 @@ const SavingsManager: React.FC<SavingsProps> = ({ clients, onTransfer }) => {
 };
 
 export default SavingsManager;
+    

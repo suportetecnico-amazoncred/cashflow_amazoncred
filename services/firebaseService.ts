@@ -5,17 +5,21 @@ import {
   collection, 
   doc, 
   setDoc, 
-  getDocs, 
   query, 
   where, 
-  orderBy,
-  updateDoc, 
-  addDoc, 
   onSnapshot
 } from "firebase/firestore";
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  User
+} from "firebase/auth";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { Client, Transaction } from "../types.js";
 
-// Configurações atualizadas do novo banco de dados cashflow-cred-5afb2
 const firebaseConfig = {
   apiKey: "AIzaSyALTpd7IOCrvD5FNHhd3ZJ-PnjdXcfXUYo",
   authDomain: "cashflow-cred-5afb2.firebaseapp.com",
@@ -27,33 +31,35 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+const functions = getFunctions(app, 'southamerica-east1'); // Especifique a região, se necessário
 
-export const saveClient = async (client: Client) => {
-  await setDoc(doc(db, "clients", client.id), client);
+// Funções de Autenticação Segura
+export const signUpWithEmail = (email, password) => {
+  return createUserWithEmailAndPassword(auth, email, password);
 };
 
-export const getClientByEmail = async (email: string): Promise<Client | null> => {
-  const q = query(collection(db, "clients"), where("email", "==", email.toLowerCase()));
-  const querySnapshot = await getDocs(q);
-  if (!querySnapshot.empty) {
-    return querySnapshot.docs[0].data() as Client;
-  }
-  return null;
+export const signInWithEmail = (email, password) => {
+  return signInWithEmailAndPassword(auth, email, password);
 };
 
-export const saveTransaction = async (transaction: Transaction) => {
-  await addDoc(collection(db, "transactions"), transaction);
+export const logoutFirebase = () => {
+  return signOut(auth);
 };
 
-export const updateClientBalances = async (clientId: string, data: Partial<Client>) => {
-  const clientRef = doc(db, "clients", clientId);
-  await updateDoc(clientRef, data);
+export const onAuthChange = (callback: (user: User | null) => void) => {
+  return onAuthStateChanged(auth, callback);
+};
+
+// Funções de Banco de Dados (Leitura e Criação Inicial)
+export const saveClient = async (client: Partial<Client>) => {
+  await setDoc(doc(db, "clients", client.id!), client);
 };
 
 export const listenToClientData = (clientId: string, callback: (client: Client) => void) => {
-  return onSnapshot(doc(db, "clients", clientId), (doc) => {
-    if (doc.exists()) {
-      callback(doc.data() as Client);
+  return onSnapshot(doc(db, "clients", clientId), (docSnapshot) => {
+    if (docSnapshot.exists()) {
+      callback(docSnapshot.data() as Client);
     }
   });
 };
@@ -61,8 +67,7 @@ export const listenToClientData = (clientId: string, callback: (client: Client) 
 export const listenToTransactions = (clientId: string, callback: (transactions: Transaction[]) => void) => {
   const q = query(
     collection(db, "transactions"), 
-    where("clientId", "==", clientId),
-    orderBy("timestamp", "desc")
+    where("clientId", "==", clientId)
   );
   
   return onSnapshot(q, (querySnapshot) => {
@@ -70,8 +75,13 @@ export const listenToTransactions = (clientId: string, callback: (transactions: 
     querySnapshot.forEach((doc) => {
       txs.push(doc.data() as Transaction);
     });
+    txs.sort((a, b) => b.timestamp - a.timestamp);
     callback(txs);
   });
 };
 
-export { db };
+// Chamada Segura para a Cloud Function
+export const processTransaction = httpsCallable(functions, 'processTransaction');
+
+export { db, auth };
+    
