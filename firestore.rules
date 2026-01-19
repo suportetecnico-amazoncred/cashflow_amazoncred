@@ -1,75 +1,84 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
   
     // =================================
-    // CLIENTS COLLECTION
+    // FUNÇÕES AUXILIARES (CEL VÁLIDO)
     // =================================
+    
+    function isTransactionSane(data) {
+        return data.amount > 0 
+               && data.clientId == request.auth.uid 
+               && math.abs(data.timestamp - request.time.toMillis()) < 10000
+               && (
+                 data.type in ['entry', 'withdrawal', 'savings_transfer', 'payment'] ||
+                 (data.type == 'credit_use' && 'installments' in data && data.installments is int && data.installments > 0)
+               );
+    }
+
+    function isLoanUnchanged(newData, oldData) {
+        return newData.loanTotal == oldData.loanTotal
+            && newData.totalInstallments == oldData.totalInstallments
+            && newData.installmentValue == oldData.installmentValue;
+    }
+
+    function isClientUpdateValid(newData, oldData) {
+        // Campos imutáveis devem permanecer iguais
+        return newData.id == oldData.id 
+            && newData.createdAt == oldData.createdAt 
+            && newData.name == oldData.name 
+            && newData.email == oldData.email 
+            && newData.phone == oldData.phone
+            && (
+                // CASO A: Depósito em Conta
+                (newData.balance > oldData.balance && newData.savings == oldData.savings && newData.creditUsed == oldData.creditUsed && isLoanUnchanged(newData, oldData)) ||
+                
+                // CASO B: Saque (Saldo deve ficar positivo)
+                (newData.balance < oldData.balance && newData.balance >= 0 && newData.savings == oldData.savings && newData.creditUsed == oldData.creditUsed && isLoanUnchanged(newData, oldData)) ||
+                
+                // CASO C: Transferência para Poupança
+                (newData.balance < oldData.balance && newData.balance >= 0 && (newData.savings - oldData.savings) == (oldData.balance - newData.balance) && newData.creditUsed == oldData.creditUsed && isLoanUnchanged(newData, oldData)) ||
+                
+                // CASO D: Novo Empréstimo (Só se não houver dívida)
+                (oldData.creditUsed < 0.01 && newData.creditUsed > 0 && newData.balance == oldData.balance && newData.savings == oldData.savings && newData.loanTotal == newData.creditUsed && newData.totalInstallments > 0 && newData.installmentValue > 0 && math.abs((newData.installmentValue * newData.totalInstallments) - newData.loanTotal) < 0.1) ||
+                
+                // CASO E: Pagamento de Empréstimo
+                (oldData.creditUsed > 0 && newData.creditUsed < oldData.creditUsed && newData.balance < oldData.balance && newData.savings == oldData.savings && 
+                    (
+                      // Sub-caso E1: Pagamento Parcial
+                      (newData.creditUsed > 0.01 && math.abs((oldData.creditUsed - newData.creditUsed) - (oldData.balance - newData.balance)) < 0.1 && isLoanUnchanged(newData, oldData)) ||
+                      // Sub-caso E2: Quitação Total
+                      (newData.creditUsed <= 0.01 && math.abs((oldData.balance - newData.balance) - oldData.creditUsed) <= 0.1 && newData.loanTotal == 0 && newData.totalInstallments == 0 && newData.installmentValue == 0 && newData.creditUsed == 0)
+                    )
+                )
+            );
+    }
+
+    // =================================
+    // REGRAS DE ACESSO
+    // =================================
+    
     match /clients/{userId} {
-      // Um usuário só pode ler, atualizar ou deletar seu próprio documento de cliente.
-      allow read, update, delete: if request.auth.uid == userId;
+      allow read, delete: if request.auth.uid == userId;
       
-      // Um usuário pode criar seu próprio documento, mas apenas se os valores iniciais forem seguros (sem saldo inicial, etc.).
       allow create: if request.auth.uid == userId
                       && request.resource.data.balance == 0
                       && request.resource.data.savings == 0
                       && request.resource.data.creditUsed == 0
                       && request.resource.data.loanTotal == 0;
+
+      allow update: if request.auth.uid == userId && isClientUpdateValid(request.resource.data, resource.data);
     }
     
-    // =================================
-    // TRANSACTIONS COLLECTION
-    // =================================
     match /transactions/{transactionId} {
-      // Um usuário só pode ler as suas próprias transações.
-      allow read: if request.auth.uid != null && get(/databases/$(database)/documents/clients/$(request.auth.uid)).data.id == resource.data.clientId;
+      allow read: if request.auth.uid != null && request.auth.uid == resource.data.clientId;
       
-      // Um usuário só pode criar uma transação para si mesmo e ela deve ser válida.
-      // A atualização e deleção são proibidas para manter um histórico imutável.
       allow create: if request.auth.uid != null 
-                    && request.auth.uid == request.resource.data.clientId
-                    && isTransactionValid(request.resource.data);
+                    && request.auth.uid == request.resource.data.clientId 
+                    && isTransactionSane(request.resource.data);
 
       allow update, delete: if false; 
-    }
-    
-    // =================================
-    // HELPER FUNCTIONS
-    // =================================
-    function isTransactionValid(data) {
-      let clientData = get(/databases/$(database)/documents/clients/$(request.auth.uid)).data;
-      
-      // Validações Gerais
-      let isCommonValid = data.amount > 0 
-                          && data.clientId == request.auth.uid 
-                          && data.timestamp == request.time;
-      
-      if (!isCommonValid) { return false; }
-
-      // Validações Específicas por Tipo de Transação
-      if (data.type == 'entry') {
-        return true; // Depósitos são sempre bem-vindos.
-      }
-      
-      if (data.type == 'withdrawal' || data.type == 'savings_transfer') {
-        return clientData.balance >= data.amount; // Checa se há saldo para saque ou transferência.
-      }
-
-      if (data.type == 'payment') {
-        // Checa se há saldo e se o pagamento não é maior que a dívida.
-        return clientData.balance >= data.amount && clientData.creditUsed >= data.amount;
-      }
-      
-      if (data.type == 'credit_use') {
-        // Checa se já não há um empréstimo ativo.
-        return clientData.creditUsed == 0 
-                && data.installments > 0
-                && data.amount == (clientData.loanTotal / clientData.totalInstallments) * data.installments; // Verificação simples
-      }
-      
-      return false; // Bloqueia qualquer outro tipo não listado.
     }
   }
 }

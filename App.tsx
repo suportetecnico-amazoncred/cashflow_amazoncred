@@ -118,20 +118,23 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSecureTransaction = async (type: MovementType, amount: number, description: string, installments?: number) => {
+  const handleSecureTransaction = async (
+    type: MovementType, 
+    amount: number, 
+    description: string, 
+    installments?: number,
+    installmentValue?: number
+  ) => {
     setIsProcessing(true);
     try {
-      // A chamada agora é para a função local, que retorna uma Promise
-      const result = await processTransaction({ type, amount, description, installments });
+      const result = await processTransaction({ type, amount, description, installments, installmentValue });
       if (result.success) {
         setView('dashboard');
       } else {
-        // Este 'else' pode não ser alcançado se a função sempre lançar erros
         throw new Error(result.message || "Erro desconhecido na transação.");
       }
     } catch (err) {
       console.error("Erro na transação:", err);
-      // O erro agora é uma instância de Error com uma mensagem clara
       alert(`Erro ao processar: ${(err as Error).message}`);
     } finally {
       setIsProcessing(false);

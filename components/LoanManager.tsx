@@ -4,7 +4,7 @@ import { MovementType } from '../types.js';
 import { ClientContext } from '../context/ClientContext.js';
 
 interface LoanManagerProps {
-  onConfirm: (type: MovementType, amount: number, description: string, installments: number) => void;
+  onConfirm: (type: MovementType, amount: number, description: string, installments: number, installmentValue: number) => void;
 }
 
 const LoanManager: React.FC<LoanManagerProps> = ({ onConfirm }) => {
@@ -14,7 +14,7 @@ const LoanManager: React.FC<LoanManagerProps> = ({ onConfirm }) => {
 
   if (!activeClient) return null;
 
-  const total = instValue * instCount;
+  const total = Math.round(instValue * instCount * 100) / 100;
   const hasActiveLoan = activeClient.creditUsed > 0;
 
   const formatCurrency = (value: number) => {
@@ -23,13 +23,14 @@ const LoanManager: React.FC<LoanManagerProps> = ({ onConfirm }) => {
 
   const handleApply = (e: React.FormEvent) => {
     e.preventDefault();
-    if (total <= 0 || instCount <= 0 || hasActiveLoan) return;
+    if (total <= 0 || instCount <= 0 || instValue <= 0 || hasActiveLoan) return;
     
     onConfirm(
       'credit_use', 
       total, 
       `Novo Empréstimo: ${instCount}x de ${formatCurrency(instValue)}`,
-      instCount
+      instCount,
+      instValue
     );
   };
 
@@ -97,8 +98,9 @@ const LoanManager: React.FC<LoanManagerProps> = ({ onConfirm }) => {
                   <input
                     required
                     type="number"
+                    step="1"
                     value={instCount || ''}
-                    onChange={(e) => setInstCount(Number(e.target.value))}
+                    onChange={(e) => setInstCount(parseInt(e.target.value, 10) || 0)}
                     placeholder="Ou digite..."
                     className="w-full p-4 mt-2 bg-slate-50 rounded-xl border-2 border-transparent focus:border-emerald-500 outline-none font-bold text-slate-600"
                   />
@@ -134,4 +136,3 @@ const LoanManager: React.FC<LoanManagerProps> = ({ onConfirm }) => {
 };
 
 export default LoanManager;
-    

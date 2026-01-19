@@ -1,4 +1,3 @@
-
 export interface Client {
   id: string;
   name: string;
@@ -22,15 +21,8 @@ export interface Transaction {
   amount: number;
   description: string;
   timestamp: number;
-  profit: number;
   paymentMethod: string;
   installments?: number; 
 }
 
-export interface SavingsState {
-  totalSavings: number;
-  savingsHistory?: any[];
-}
-
 export type ViewState = 'welcome' | 'dashboard' | 'operations' | 'clients' | 'savings' | 'loans';
-    
